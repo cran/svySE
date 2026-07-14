@@ -7,17 +7,20 @@
 
 #' Calculate sampling errors
 #'
-#' Calcula errores muestrales para uno o mas indicadores usando un data.frame
-#' previamente cargado por el usuario.
+#' Calcula estimaciones ponderadas y errores muestrales para uno o mas
+#' indicadores usando un data.frame previamente cargado por el usuario.
 #'
-#' Calculates sampling errors for one or more indicators using a data.frame
-#' previously loaded by the user.
+#' Calculates weighted estimates and sampling errors for one or more indicators
+#' using a data.frame previously loaded by the user.
 #'
 #' @param data Base de datos ya cargada en R / Data frame already loaded in R.
 #' @param indicators Vector con los nombres de los indicadores.
 #' @param group_vars Variables de agrupacion.
 #' @param group_labels Etiquetas de las variables de agrupacion.
-#' @param strata Variable o variables de estrato.
+#' @param strata Variable or variables identifying strata. If `NULL`, the design
+#'   is treated as unstratified.
+#' @param cluster Variable or variables identifying primary sampling units or
+#'   clusters. If `NULL`, the design is treated as unclustered using `ids = ~1`.
 #' @param weight Variable de peso principal.
 #' @param division Variable de division opcional.
 #' @param div_weight Variable de peso opcional para las divisiones.
@@ -26,7 +29,8 @@
 #' @param strict Si es `TRUE`, detiene el calculo cuando encuentra valores
 #'   fuera de `cfg$valid_values`; si es `FALSE`, los excluye con advertencia.
 #'
-#' @return Objeto de clase `"svySE_result"`.
+#' @return Objeto de clase `"svySE_result"` que contiene exclusivamente
+#'   estimaciones ponderadas y tablas de errores muestrales.
 #'
 #' @importFrom stats update reformulate confint coef
 #' @importFrom utils head
@@ -36,8 +40,9 @@ svySE_calc <- function(
     indicators,
     group_vars,
     group_labels = group_vars,
-    strata,
-    weight,
+    strata = NULL,
+    cluster = NULL,
+    weight = NULL,
     division = NULL,
     div_weight = NULL,
     cfg = svySE_cfg(),
@@ -77,8 +82,25 @@ svySE_calc <- function(
   svySE_chk_chr(indicators, "indicators")
   svySE_chk_chr(group_vars, "group_vars")
   svySE_chk_chr(group_labels, "group_labels")
-  svySE_chk_chr(strata, "strata")
   svySE_chk_chr(weight, "weight")
+  
+  # ---------------------------------------------------------------------------
+  # Validar strata solo si se especifica
+  # Validate strata only if specified
+  # ---------------------------------------------------------------------------
+  
+  if (!is.null(strata)) {
+    svySE_chk_chr(strata, "strata")
+  }
+  
+  # ---------------------------------------------------------------------------
+  # Validar cluster solo si se especifica
+  # Validate cluster only if specified
+  # ---------------------------------------------------------------------------
+  
+  if (!is.null(cluster)) {
+    svySE_chk_chr(cluster, "cluster")
+  }
   
   if (length(weight) != 1) {
     svySE_abort(
@@ -114,8 +136,15 @@ svySE_calc <- function(
   
   svySE_chk_vars(data, indicators, "indicators")
   svySE_chk_vars(data, group_vars, "group_vars")
-  svySE_chk_vars(data, strata, "strata")
   svySE_chk_vars(data, weight, "weight")
+  
+  if (!is.null(strata)) {
+    svySE_chk_vars(data, strata, "strata")
+  }
+  
+  if (!is.null(cluster)) {
+    svySE_chk_vars(data, cluster, "cluster")
+  }
   
   if (!is.null(division)) {
     svySE_chk_vars(data, division, "division")
@@ -158,10 +187,20 @@ svySE_calc <- function(
     )
   }
   
+  required_vars <- group_vars
+  
+  if (!is.null(strata)) {
+    required_vars <- c(required_vars, strata)
+  }
+  
+  if (!is.null(cluster)) {
+    required_vars <- c(required_vars, cluster)
+  }
+  
   svySE_chk_required_no_na(
     data = data,
-    vars = c(group_vars, strata),
-    context = "variables de grupo y estrato / group and strata variables"
+    vars = required_vars,
+    context = "variables de grupo, estrato y conglomerado / group, strata and cluster variables"
   )
   
   if (!is.null(division)) {
@@ -220,7 +259,6 @@ svySE_calc <- function(
       )
       
       err_list <- list()
-      tab_list <- list()
       
       for (i in seq_along(filters)) {
         
@@ -236,15 +274,8 @@ svySE_calc <- function(
             data = f$data,
             group_vars = group_vars,
             strata = strata,
+            cluster = cluster,
             weight = f$weight,
-            indicator = ind,
-            groups_master = groups_master,
-            cfg = cfg
-          )
-          
-          tab_list[[f$name]] <- svySE_tab_one(
-            data = f$data,
-            group_vars = group_vars,
             indicator = ind,
             groups_master = groups_master,
             cfg = cfg
@@ -264,7 +295,8 @@ svySE_calc <- function(
               indicator = ind,
               division = f$name,
               group_vars = group_vars,
-              strata = strata,
+              strata = if (is.null(strata)) "NULL" else strata,
+              cluster = if (is.null(cluster)) "NULL" else cluster,
               weight_used = f$weight,
               estimator = cfg$estimator,
               target = cfg$target,
@@ -279,8 +311,7 @@ svySE_calc <- function(
       }
       
       list(
-        error = err_list,
-        simple = tab_list
+        error = err_list
       )
       
     }, error = function(e) {
@@ -291,7 +322,8 @@ svySE_calc <- function(
         vars = list(
           indicator = ind,
           group_vars = group_vars,
-          strata = strata,
+          strata = if (is.null(strata)) "NULL" else strata,
+          cluster = if (is.null(cluster)) "NULL" else cluster,
           weight = weight,
           division = if (is.null(division)) "NULL" else division,
           div_weight = if (is.null(div_weight)) "NULL" else div_weight,
@@ -314,6 +346,7 @@ svySE_calc <- function(
       group_vars = group_vars,
       group_labels = group_labels,
       strata = strata,
+      cluster = cluster,
       weight = weight,
       division = division,
       div_weight = div_weight,
@@ -338,6 +371,7 @@ svySE_err_one <- function(
     data,
     group_vars,
     strata,
+    cluster,
     weight,
     indicator,
     groups_master,
@@ -364,6 +398,7 @@ svySE_err_one <- function(
     svySE_design(
       data = data,
       strata = strata,
+      cluster = cluster,
       weight = weight
     ),
     error = function(e) {
@@ -371,11 +406,12 @@ svySE_err_one <- function(
         title = "No se pudo construir el diseno muestral / Could not build survey design.",
         details = "El error ocurrio al ejecutar `survey::svydesign()`.",
         vars = list(
-          strata = strata,
+          strata = if (is.null(strata)) "NULL" else strata,
+          cluster = if (is.null(cluster)) "NULL" else cluster,
           weight = weight,
           n_rows = nrow(data)
         ),
-        hint = "Verifica que el peso sea numerico, no negativo, no todo NA, y que la variable de estrato exista y no tenga valores perdidos.",
+        hint = "Verifica que el peso sea numerico, no negativo, no todo NA, y que las variables de estrato o conglomerado existan y no tengan valores perdidos.",
         parent = e
       )
     }
@@ -736,78 +772,6 @@ svySE_est_total <- function(
 
 
 # ==============================================================================
-# Tabla simple
-# Simple table
-# ==============================================================================
-
-#' @keywords internal
-svySE_tab_one <- function(
-    data,
-    group_vars,
-    indicator,
-    groups_master,
-    cfg
-) {
-  
-  metric_names <- svySE_cols_tab_all()
-  
-  out <- data.frame()
-  
-  for (g in groups_master) {
-    
-    group_data <- data[data$.__svySE_group_id__ == g, , drop = FALSE]
-    
-    if (nrow(group_data) == 0) {
-      
-      row_na <- svySE_na_row(
-        group_id = g,
-        group_vars = group_vars,
-        metric_names = metric_names
-      )
-      
-      out <- rbind(out, row_na)
-      next
-    }
-    
-    group_row <- group_data[1, group_vars, drop = FALSE]
-    
-    m <- data.frame(
-      freq_0 = sum(group_data[[indicator]] == 0, na.rm = TRUE),
-      pct_0 = mean(group_data[[indicator]] == 0, na.rm = TRUE) * cfg$pct_mult,
-      freq_1 = sum(group_data[[indicator]] == cfg$target, na.rm = TRUE),
-      pct_1 = mean(group_data[[indicator]] == cfg$target, na.rm = TRUE) * cfg$pct_mult,
-      freq_total = nrow(group_data),
-      pct_total = cfg$pct_mult
-    )
-    
-    out <- rbind(out, cbind(group_row, m))
-  }
-  
-  total_group <- as.data.frame(
-    as.list(rep("NACIONAL", length(group_vars))),
-    stringsAsFactors = FALSE
-  )
-  
-  names(total_group) <- group_vars
-  
-  total_m <- data.frame(
-    freq_0 = sum(data[[indicator]] == 0, na.rm = TRUE),
-    pct_0 = mean(data[[indicator]] == 0, na.rm = TRUE) * cfg$pct_mult,
-    freq_1 = sum(data[[indicator]] == cfg$target, na.rm = TRUE),
-    pct_1 = mean(data[[indicator]] == cfg$target, na.rm = TRUE) * cfg$pct_mult,
-    freq_total = nrow(data),
-    pct_total = cfg$pct_mult
-  )
-  
-  out <- rbind(cbind(total_group, total_m), out)
-  
-  rownames(out) <- NULL
-  
-  out
-}
-
-
-# ==============================================================================
 # Preparacion de datos
 # Data preparation
 # ==============================================================================
@@ -918,7 +882,8 @@ svySE_filters <- function(
 #' @keywords internal
 svySE_design <- function(
     data,
-    strata,
+    strata = NULL,
+    cluster = NULL,
     weight
 ) {
   
@@ -931,17 +896,91 @@ svySE_design <- function(
     )
   }
   
+  # Revalida errores graves sin repetir el aviso por pesos cero.
   svySE_chk_weight_values(
     data = data,
-    weight = weight
+    weight = weight,
+    warn_zero = FALSE
   )
   
+  if (is.null(cluster)) {
+    ids_formula <- ~1
+  } else {
+    ids_formula <- stats::reformulate(cluster)
+  }
+  
+  if (is.null(strata)) {
+    strata_formula <- NULL
+  } else {
+    strata_formula <- stats::reformulate(strata)
+  }
+  
+  if (!is.null(strata) && !is.null(cluster)) {
+    svySE_chk_cluster_strata(
+      data = data,
+      strata = strata,
+      cluster = cluster
+    )
+  }
+  
   survey::svydesign(
-    ids = ~1,
-    strata = stats::reformulate(strata),
+    ids = ids_formula,
+    strata = strata_formula,
     weights = stats::reformulate(weight),
-    data = data
+    data = data,
+    nest = TRUE
   )
+}
+
+
+#' @keywords internal
+svySE_chk_cluster_strata <- function(
+    data,
+    strata,
+    cluster
+) {
+  
+  strata_id <- do.call(
+    paste,
+    c(data[strata], sep = " | ")
+  )
+  
+  cluster_id <- do.call(
+    paste,
+    c(data[cluster], sep = " | ")
+  )
+  
+  tmp <- unique(
+    data.frame(
+      .__svySE_strata_id__ = strata_id,
+      .__svySE_cluster_id__ = cluster_id,
+      stringsAsFactors = FALSE
+    )
+  )
+  
+  n_cluster <- stats::aggregate(
+    .__svySE_cluster_id__ ~ .__svySE_strata_id__,
+    data = tmp,
+    FUN = function(x) length(unique(x))
+  )
+  
+  names(n_cluster)[2] <- "n_cluster"
+  
+  lonely <- n_cluster[n_cluster$n_cluster < 2, , drop = FALSE]
+  
+  if (nrow(lonely) > 0) {
+    warning(
+      paste0(
+        "Some strata contain only one cluster. ",
+        "The result will depend on the `survey.lonely.psu` option defined in `svySE_cfg()`. ",
+        "Current option: ",
+        getOption("survey.lonely.psu")
+      ),
+      call. = FALSE
+    )
+  }
+  
+  invisible(TRUE)
 }
 
 
@@ -1259,9 +1298,13 @@ svySE_prepare_weight <- function(
   
   original <- data[[weight]]
   
-  converted <- suppressWarnings(as.numeric(original))
+  converted <- suppressWarnings(
+    as.numeric(original)
+  )
   
-  new_na <- sum(is.na(converted) & !is.na(original))
+  new_na <- sum(
+    is.na(converted) & !is.na(original)
+  )
   
   if (new_na > 0) {
     warning(
@@ -1276,7 +1319,13 @@ svySE_prepare_weight <- function(
   
   data[[weight]] <- converted
   
-  svySE_chk_weight_values(data, weight)
+  # La validacion completa y el aviso por pesos cero se realizan aqui,
+  # una sola vez durante la preparacion del peso.
+  svySE_chk_weight_values(
+    data = data,
+    weight = weight,
+    warn_zero = TRUE
+  )
   
   data
 }
@@ -1285,7 +1334,8 @@ svySE_prepare_weight <- function(
 #' @keywords internal
 svySE_chk_weight_values <- function(
     data,
-    weight
+    weight,
+    warn_zero = TRUE
 ) {
   
   w <- data[[weight]]
@@ -1293,38 +1343,54 @@ svySE_chk_weight_values <- function(
   if (all(is.na(w))) {
     svySE_abort(
       title = "Peso completamente perdido / Weight is completely missing.",
-      details = paste0("La variable de peso `", weight, "` solo contiene NA."),
+      details = paste0(
+        "La variable de peso `", weight, "` solo contiene NA."
+      ),
       vars = list(weight = weight),
-      hint = "Revisa si el nombre del peso es correcto o si fue leido como texto no convertible a numero."
+      hint = paste(
+        "Revisa si el nombre del peso es correcto o si fue leido",
+        "como texto no convertible a numero."
+      )
     )
   }
   
   if (any(w < 0, na.rm = TRUE)) {
     svySE_abort(
       title = "Peso con valores negativos / Weight has negative values.",
-      details = paste0("La variable `", weight, "` contiene pesos negativos."),
+      details = paste0(
+        "La variable `", weight, "` contiene pesos negativos."
+      ),
       vars = list(
         weight = weight,
         min_weight = min(w, na.rm = TRUE)
       ),
-      hint = "Los pesos muestrales deben ser no negativos. Revisa la variable de factor de expansion."
+      hint = paste(
+        "Los pesos muestrales deben ser no negativos.",
+        "Revisa la variable de factor de expansion."
+      )
     )
   }
   
   if (all(w == 0 | is.na(w))) {
     svySE_abort(
       title = "Peso sin valores positivos / Weight has no positive values.",
-      details = paste0("La variable `", weight, "` no tiene valores positivos."),
+      details = paste0(
+        "La variable `", weight, "` no tiene valores positivos."
+      ),
       vars = list(weight = weight),
       hint = "Verifica que estes usando el factor de expansion correcto."
     )
   }
   
-  if (any(w == 0, na.rm = TRUE)) {
+  if (
+    isTRUE(warn_zero) &&
+    any(w == 0, na.rm = TRUE)
+  ) {
     warning(
       paste0(
         "La variable de peso `", weight,
-        "` contiene valores cero. Estos registros no aportaran al estimador ponderado."
+        "` contiene valores cero. ",
+        "Estos registros no aportaran al estimador ponderado."
       ),
       call. = FALSE
     )
@@ -1587,16 +1653,18 @@ svySE_observed_values <- function(x) {
 #' @export
 print.svySE_result <- function(x, ...) {
   
-  cat("svySE result\n")
+  cat("svySE sampling error result\n")
   cat("--------------------------------------------------\n")
   cat("Indicators :", paste(x$meta$indicators, collapse = ", "), "\n")
   cat("Groups     :", paste(x$meta$group_vars, collapse = ", "), "\n")
-  cat("Strata     :", paste(x$meta$strata, collapse = ", "), "\n")
+  cat("Strata     :", if (is.null(x$meta$strata)) "NULL" else paste(x$meta$strata, collapse = ", "), "\n")
+  cat("Cluster    :", if (is.null(x$meta$cluster)) "NULL" else paste(x$meta$cluster, collapse = ", "), "\n")
   cat("Weight     :", x$meta$weight, "\n")
   cat("Division   :", ifelse(is.null(x$meta$division), "NULL", x$meta$division), "\n")
   cat("Estimator  :", x$meta$cfg$estimator, "\n")
   cat("Target     :", x$meta$cfg$target, "\n")
   cat("Strict     :", x$meta$strict, "\n")
+  cat("Simple tab : No (use svySE_simple())\n")
   
   invisible(x)
 }
