@@ -33,8 +33,13 @@
 #'   not exported.
 #' @param cols_err Columnas de error a exportar.
 #'   Sampling error columns to export.
-#' @param cols_tab Columnas de tabla simple a exportar.
-#'   Simple table columns to export.
+#' @param cols_tab Columnas de tabla simple a exportar. Si es `NULL`, se
+#'   exportan todas las columnas disponibles en cada objeto simple. Puede
+#'   utilizarse `svySE_cols_tab()` para seleccionar perfiles o columnas
+#'   personalizadas.
+#'   Simple table columns to export. If `NULL`, all columns available in each
+#'   simple result are exported. Use `svySE_cols_tab()` to select profiles or
+#'   custom columns.
 #' @param start_row Fila inicial de escritura.
 #'   Starting row for writing.
 #' @param overwrite Sobrescribir archivos existentes.
@@ -67,7 +72,7 @@ svySE_xlsx <- function(
     file_err = NULL,
     file_tab = NULL,
     cols_err = svySE_cols_err("full"),
-    cols_tab = svySE_cols_tab("full"),
+    cols_tab = NULL,
     start_row = 10,
     overwrite = TRUE,
     keep_na = FALSE
@@ -265,7 +270,13 @@ svySE_xlsx <- function(
       )
     }
     
-    svySE_chk_cols(cols_tab, svySE_cols_tab_all(), "cols_tab")
+    if (!is.null(cols_tab)) {
+      svySE_chk_cols(
+        cols_tab,
+        svySE_cols_tab_all(),
+        "cols_tab"
+      )
+    }
   }
   
   if (!is.null(file_err) && !is.null(file_tab)) {
@@ -384,13 +395,19 @@ svySE_xlsx <- function(
         
         openxlsx::addWorksheet(wb_tab, sheet)
         
+        cols_tab_obj <- svySE_resolve_tab_cols(
+          obj = obj,
+          indicator = ind,
+          cols = cols_tab
+        )
+
         svySE_write_tab_sheet(
           wb = wb_tab,
           sheet = sheet,
           result_ind = obj$results[[ind]]$simple,
           group_vars = obj$meta$group_vars,
           group_labels = obj$meta$group_labels,
-          cols = cols_tab,
+          cols = cols_tab_obj,
           start_row = start_row,
           keep_na = keep_na
         )
@@ -487,6 +504,103 @@ svySE_write_err_sheet <- function(
   )
   
   invisible(TRUE)
+}
+
+
+# ==============================================================================
+# Resolver columnas disponibles para una tabla simple
+# Resolve available columns for a simple table
+# ==============================================================================
+
+#' @keywords internal
+svySE_resolve_tab_cols <- function(
+    obj,
+    indicator,
+    cols = NULL
+) {
+
+  result_ind <- obj$results[[indicator]]$simple
+
+  if (is.null(result_ind) || length(result_ind) == 0) {
+    svySE_abort(
+      title = "Tabla simple vacia / Empty simple table.",
+      details = paste0(
+        "No se encontraron tablas simples para el indicador `",
+        indicator, "`."
+      ),
+      vars = list(indicator = indicator)
+    )
+  }
+
+  available_by_division <- lapply(
+    result_ind,
+    names
+  )
+
+  available <- Reduce(
+    intersect,
+    available_by_division
+  )
+
+  metric_available <- intersect(
+    svySE_cols_tab_all(),
+    available
+  )
+
+  if (length(metric_available) == 0) {
+    svySE_abort(
+      title = paste(
+        "No se encontraron columnas simples exportables /",
+        "No exportable simple columns were found."
+      ),
+      vars = list(
+        indicator = indicator,
+        available_columns = available
+      )
+    )
+  }
+
+  if (is.null(cols)) {
+    return(metric_available)
+  }
+
+  missing_cols <- setdiff(
+    cols,
+    metric_available
+  )
+
+  if (length(missing_cols) > 0) {
+
+    output_type <- if (!is.null(obj$meta$output)) {
+      obj$meta$output
+    } else {
+      "legacy/unweighted"
+    }
+
+    svySE_abort(
+      title = paste(
+        "Columnas no disponibles en la tabla simple /",
+        "Columns unavailable in the simple table."
+      ),
+      details = paste0(
+        "El resultado del indicador `", indicator,
+        "` fue calculado con output = `", output_type,
+        "` y no contiene todas las columnas solicitadas."
+      ),
+      vars = list(
+        requested_columns = cols,
+        missing_columns = missing_cols,
+        available_columns = metric_available
+      ),
+      hint = paste(
+        "Vuelve a calcular con `output = \"both\"` si necesitas columnas",
+        "expandidas y sin expandir, o selecciona un perfil compatible mediante",
+        "`svySE_cols_tab()`."
+      )
+    )
+  }
+
+  cols
 }
 
 
@@ -772,25 +886,37 @@ svySE_sublbl_err <- function(cols) {
 
 #' @keywords internal
 svySE_lbl_tab <- function(cols) {
-  
+
   top <- c(
     freq_0 = "0",
     pct_0 = "0",
     freq_1 = "1",
     pct_1 = "1",
     freq_total = "TOTAL",
-    pct_total = "TOTAL"
+    pct_total = "TOTAL",
+    exp_0 = "0",
+    exp_pct_0 = "0",
+    exp_1 = "1",
+    exp_pct_1 = "1",
+    exp_total = "TOTAL",
+    exp_pct_total = "TOTAL"
   )
-  
+
   low <- c(
-    freq_0 = "Abs.",
+    freq_0 = "Sin expandir",
     pct_0 = "%",
-    freq_1 = "Abs.",
+    freq_1 = "Sin expandir",
     pct_1 = "%",
-    freq_total = "Abs.",
-    pct_total = "%"
+    freq_total = "Sin expandir",
+    pct_total = "%",
+    exp_0 = "Expandido",
+    exp_pct_0 = "% expandido",
+    exp_1 = "Expandido",
+    exp_pct_1 = "% expandido",
+    exp_total = "Expandido",
+    exp_pct_total = "% expandido"
   )
-  
+
   data.frame(
     top = unname(top[cols]),
     low = unname(low[cols]),

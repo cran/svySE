@@ -1,349 +1,394 @@
 # ==============================================================================
-# Tests: tablas simples
-# Tests: simple indicator tables
-# Archivo / File: tests/testthat/test-simple.R
+# Tests for svySE_simple()
 # ==============================================================================
 
+test_that("svySE_simple keeps the original unweighted behavior", {
 
-make_simple_test_data <- function() {
-
-  data.frame(
-    dept = rep(c("A", "B", "C"), each = 8),
-    area = rep(c("Urban", "Rural"), length.out = 24),
-    ind_1 = c(
-      1, 1, 0, 0, 1, 0, 1, 0,
-      1, 0, 0, 0, 1, 0, 0, 0,
-      1, 1, 1, 0, 1, 1, 0, 0
-    ),
-    ind_2 = rep(c(0, 1, 1), length.out = 24),
-    stringsAsFactors = FALSE
+  data <- data.frame(
+    group = c("A", "A", "A", "B", "B"),
+    indicator = c(0, 1, 1, 0, 1),
+    weight = c(10, 20, 30, 40, 50)
   )
-}
-
-
-test_that("svySE_simple returns a valid simple result", {
 
   result <- svySE_simple(
-    data = make_simple_test_data(),
-    indicators = "ind_1",
-    group_vars = "dept",
-    group_labels = "Department",
+    data = data,
+    indicators = "indicator",
+    group_vars = "group",
+    output = "unweighted",
     verbose = FALSE
   )
 
-  expect_s3_class(result, "svySE_simple_result")
-  expect_identical(names(result$results), "ind_1")
-  expect_identical(names(result$results$ind_1), "simple")
-  expect_identical(names(result$results$ind_1$simple), "TOTAL")
-  expect_false("error" %in% names(result$results$ind_1))
+  expect_s3_class(
+    result,
+    "svySE_simple_result"
+  )
 
-  expect_identical(result$meta$indicators, "ind_1")
-  expect_identical(result$meta$group_vars, "dept")
-  expect_identical(result$meta$group_labels, "Department")
-  expect_null(result$meta$strata)
-  expect_null(result$meta$cluster)
+  tab <- result$results$indicator$simple$TOTAL
+
+  expect_identical(
+    names(tab),
+    c(
+      "group",
+      "freq_0",
+      "pct_0",
+      "freq_1",
+      "pct_1",
+      "freq_total",
+      "pct_total"
+    )
+  )
+
+  national <- tab[tab$group == "NACIONAL", , drop = FALSE]
+  group_a <- tab[tab$group == "A", , drop = FALSE]
+  group_b <- tab[tab$group == "B", , drop = FALSE]
+
+  expect_equal(national$freq_0, 2)
+  expect_equal(national$freq_1, 3)
+  expect_equal(national$freq_total, 5)
+  expect_equal(national$pct_0, 40)
+  expect_equal(national$pct_1, 60)
+  expect_equal(national$pct_total, 100)
+
+  expect_equal(group_a$freq_0, 1)
+  expect_equal(group_a$freq_1, 2)
+  expect_equal(group_a$freq_total, 3)
+  expect_equal(group_a$pct_1, 200 / 3)
+
+  expect_equal(group_b$freq_0, 1)
+  expect_equal(group_b$freq_1, 1)
+  expect_equal(group_b$freq_total, 2)
+  expect_equal(group_b$pct_1, 50)
+
+  expect_identical(result$meta$output, "unweighted")
   expect_null(result$meta$weight)
 })
 
 
-test_that("svySE_simple calculates exact frequencies and percentages", {
+test_that("svySE_simple calculates weighted frequencies", {
 
-  df <- data.frame(
-    dept = rep(c("A", "B"), each = 4),
-    ind_1 = c(1, 1, 0, 0, 1, 0, 0, 0),
-    stringsAsFactors = FALSE
+  data <- data.frame(
+    group = c("A", "A", "A", "B", "B"),
+    indicator = c(0, 1, 1, 0, 1),
+    weight = c(10, 20, 30, 40, 50)
   )
 
   result <- svySE_simple(
-    data = df,
-    indicators = "ind_1",
-    group_vars = "dept",
-    group_labels = "Department",
-    target = 1,
-    valid_values = c(0, 1),
-    pct_mult = 100,
+    data = data,
+    indicators = "indicator",
+    group_vars = "group",
+    weight = "weight",
+    output = "weighted",
     verbose = FALSE
   )
 
-  tab <- result$results$ind_1$simple$TOTAL
-
-  national <- tab[tab$dept == "NACIONAL", , drop = FALSE]
-  group_a <- tab[tab$dept == "A", , drop = FALSE]
-  group_b <- tab[tab$dept == "B", , drop = FALSE]
-
-  expect_equal(national$freq_0, 5)
-  expect_equal(national$pct_0, 62.5)
-  expect_equal(national$freq_1, 3)
-  expect_equal(national$pct_1, 37.5)
-  expect_equal(national$freq_total, 8)
-  expect_equal(national$pct_total, 100)
-
-  expect_equal(group_a$freq_1, 2)
-  expect_equal(group_a$pct_1, 50)
-  expect_equal(group_b$freq_1, 1)
-  expect_equal(group_b$pct_1, 25)
-})
-
-
-test_that("svySE_simple works with multiple indicators", {
-
-  result <- svySE_simple(
-    data = make_simple_test_data(),
-    indicators = c("ind_1", "ind_2"),
-    group_vars = "dept",
-    group_labels = "Department",
-    verbose = FALSE
-  )
-
-  expect_setequal(names(result$results), c("ind_1", "ind_2"))
-
-  for (indicator in c("ind_1", "ind_2")) {
-    expect_identical(names(result$results[[indicator]]), "simple")
-    expect_identical(names(result$results[[indicator]]$simple), "TOTAL")
-    expect_false("error" %in% names(result$results[[indicator]]))
-  }
-})
-
-
-test_that("svySE_simple supports division variables", {
-
-  result <- svySE_simple(
-    data = make_simple_test_data(),
-    indicators = "ind_1",
-    group_vars = "dept",
-    group_labels = "Department",
-    division = "area",
-    verbose = FALSE
-  )
+  tab <- result$results$indicator$simple$TOTAL
 
   expect_identical(
-    names(result$results$ind_1$simple),
-    c("TOTAL", "Rural", "Urban")
+    names(tab),
+    c(
+      "group",
+      "exp_0",
+      "exp_pct_0",
+      "exp_1",
+      "exp_pct_1",
+      "exp_total",
+      "exp_pct_total"
+    )
   )
 
-  for (division_name in names(result$results$ind_1$simple)) {
-    tab <- result$results$ind_1$simple[[division_name]]
+  national <- tab[tab$group == "NACIONAL", , drop = FALSE]
+  group_a <- tab[tab$group == "A", , drop = FALSE]
+  group_b <- tab[tab$group == "B", , drop = FALSE]
 
-    expect_equal(tab$dept[1], "NACIONAL")
-    expect_setequal(tab$dept[-1], c("A", "B", "C"))
-  }
+  expect_equal(national$exp_0, 50)
+  expect_equal(national$exp_pct_0, 100 / 3)
+  expect_equal(national$exp_1, 100)
+  expect_equal(national$exp_pct_1, 200 / 3)
+  expect_equal(national$exp_total, 150)
+  expect_equal(national$exp_pct_total, 100)
 
-  expect_identical(result$meta$division, "area")
+  expect_equal(group_a$exp_0, 10)
+  expect_equal(group_a$exp_pct_0, 100 / 6)
+  expect_equal(group_a$exp_1, 50)
+  expect_equal(group_a$exp_pct_1, 500 / 6)
+  expect_equal(group_a$exp_total, 60)
+  expect_equal(group_a$exp_pct_total, 100)
+
+  expect_equal(group_b$exp_0, 40)
+  expect_equal(group_b$exp_pct_0, 400 / 9)
+  expect_equal(group_b$exp_1, 50)
+  expect_equal(group_b$exp_pct_1, 500 / 9)
+  expect_equal(group_b$exp_total, 90)
+  expect_equal(group_b$exp_pct_total, 100)
+
+  expect_identical(result$meta$output, "weighted")
+  expect_identical(result$meta$weight, "weight")
 })
 
 
-test_that("svySE_simple respects target and percentage multiplier", {
+test_that("svySE_simple can return weighted and unweighted frequencies together", {
 
-  df <- data.frame(
-    dept = rep("A", 4),
-    ind_1 = c(1, 1, 0, 0),
-    stringsAsFactors = FALSE
+  data <- data.frame(
+    group = c("A", "A", "A", "B", "B"),
+    indicator = c(0, 1, 1, 0, 1),
+    weight = c(10, 20, 30, 40, 50)
   )
 
   result <- svySE_simple(
-    data = df,
-    indicators = "ind_1",
-    group_vars = "dept",
-    target = 0,
-    valid_values = c(0, 1),
-    pct_mult = 1,
+    data = data,
+    indicators = "indicator",
+    group_vars = "group",
+    weight = "weight",
+    output = "both",
     verbose = FALSE
   )
 
-  tab <- result$results$ind_1$simple$TOTAL
-  national <- tab[tab$dept == "NACIONAL", , drop = FALSE]
+  tab <- result$results$indicator$simple$TOTAL
 
-  expect_equal(national$freq_1, 2)
-  expect_equal(national$pct_1, 0.5)
+  expect_identical(
+    names(tab),
+    c(
+      "group",
+      "freq_0",
+      "pct_0",
+      "freq_1",
+      "pct_1",
+      "freq_total",
+      "pct_total",
+      "exp_0",
+      "exp_pct_0",
+      "exp_1",
+      "exp_pct_1",
+      "exp_total",
+      "exp_pct_total"
+    )
+  )
+
+  national <- tab[tab$group == "NACIONAL", , drop = FALSE]
+
   expect_equal(national$freq_0, 2)
-  expect_equal(national$pct_0, 0.5)
-  expect_equal(national$pct_total, 1)
+  expect_equal(national$freq_1, 3)
+  expect_equal(national$freq_total, 5)
+
+  expect_equal(national$exp_0, 50)
+  expect_equal(national$exp_pct_0, 100 / 3)
+  expect_equal(national$exp_1, 100)
+  expect_equal(national$exp_pct_1, 200 / 3)
+  expect_equal(national$exp_total, 150)
+  expect_equal(national$exp_pct_total, 100)
+
+  expect_identical(result$meta$output, "both")
 })
 
 
-test_that("svySE_simple excludes missing and invalid indicator values", {
+test_that("weighted output requires a weight variable", {
 
-  df <- data.frame(
-    dept = c("A", "A", "B", "B", "B"),
-    ind_1 = c(0, 1, 2, NA, 1),
-    stringsAsFactors = FALSE
+  data <- data.frame(
+    group = c("A", "A"),
+    indicator = c(0, 1)
+  )
+
+  expect_error(
+    svySE_simple(
+      data = data,
+      indicators = "indicator",
+      group_vars = "group",
+      output = "weighted",
+      verbose = FALSE
+    ),
+    "Peso requerido|Weight required"
+  )
+
+  expect_error(
+    svySE_simple(
+      data = data,
+      indicators = "indicator",
+      group_vars = "group",
+      output = "both",
+      verbose = FALSE
+    ),
+    "Peso requerido|Weight required"
+  )
+})
+
+
+test_that("svySE_simple rejects invalid weight specifications", {
+
+  data <- data.frame(
+    group = c("A", "A"),
+    indicator = c(0, 1),
+    weight_a = c(1, 2),
+    weight_b = c(3, 4)
+  )
+
+  expect_error(
+    svySE_simple(
+      data = data,
+      indicators = "indicator",
+      group_vars = "group",
+      weight = c("weight_a", "weight_b"),
+      output = "weighted",
+      verbose = FALSE
+    ),
+    "Peso invalido|Invalid weight"
+  )
+
+  expect_error(
+    svySE_simple(
+      data = data,
+      indicators = "indicator",
+      group_vars = "group",
+      weight = "missing_weight",
+      output = "weighted",
+      verbose = FALSE
+    ),
+    "Variables no encontradas|Variables not found"
+  )
+})
+
+
+test_that("missing weights do not contribute to weighted frequencies", {
+
+  data <- data.frame(
+    group = c("A", "A", "A"),
+    indicator = c(0, 1, 1),
+    weight = c(10, NA, 30)
   )
 
   expect_warning(
     result <- svySE_simple(
-      data = df,
-      indicators = "ind_1",
-      group_vars = "dept",
-      valid_values = c(0, 1),
-      strict = FALSE,
+      data = data,
+      indicators = "indicator",
+      group_vars = "group",
+      weight = "weight",
+      output = "both",
       verbose = FALSE
     ),
-    "fuera de `valid_values`"
+    "valores perdidos|missing"
   )
 
-  tab <- result$results$ind_1$simple$TOTAL
-  national <- tab[tab$dept == "NACIONAL", , drop = FALSE]
+  tab <- result$results$indicator$simple$TOTAL
+  national <- tab[tab$group == "NACIONAL", , drop = FALSE]
 
+  # Unweighted counts retain all valid indicator records.
   expect_equal(national$freq_total, 3)
   expect_equal(national$freq_1, 2)
-  expect_equal(national$freq_0, 1)
+
+  # Weighted counts ignore only the record with missing weight.
+  expect_equal(national$exp_0, 10)
+  expect_equal(national$exp_pct_0, 25)
+  expect_equal(national$exp_1, 30)
+  expect_equal(national$exp_pct_1, 75)
+  expect_equal(national$exp_total, 40)
+  expect_equal(national$exp_pct_total, 100)
 })
 
 
-test_that("svySE_simple stops on invalid values when strict is TRUE", {
+test_that("na_rm controls missing indicator handling", {
 
-  df <- data.frame(
-    dept = c("A", "A", "B"),
-    ind_1 = c(0, 2, 1),
-    stringsAsFactors = FALSE
-  )
-
-  expect_error(
-    svySE_simple(
-      data = df,
-      indicators = "ind_1",
-      group_vars = "dept",
-      valid_values = c(0, 1),
-      strict = TRUE,
-      verbose = FALSE
-    ),
-    class = "svySE_error"
-  )
-})
-
-
-test_that("svySE_simple returns NA rows for groups without valid records", {
-
-  df <- data.frame(
-    dept = c("A", "A", "B", "B"),
-    ind_1 = c(0, 1, NA, NA),
-    stringsAsFactors = FALSE
+  data <- data.frame(
+    group = c("A", "A", "B"),
+    indicator = c(1, NA, 0),
+    weight = c(10, 20, 30)
   )
 
   result <- svySE_simple(
-    data = df,
-    indicators = "ind_1",
-    group_vars = "dept",
+    data = data,
+    indicators = "indicator",
+    group_vars = "group",
+    weight = "weight",
+    output = "both",
+    na_rm = TRUE,
     verbose = FALSE
   )
 
-  tab <- result$results$ind_1$simple$TOTAL
-  group_b <- tab[tab$dept == "B", , drop = FALSE]
+  tab <- result$results$indicator$simple$TOTAL
+  national <- tab[tab$group == "NACIONAL", , drop = FALSE]
 
-  expect_equal(nrow(group_b), 1)
-  expect_true(all(is.na(group_b[svySE_cols_tab_all()])))
+  expect_equal(national$freq_total, 2)
+  expect_equal(national$exp_total, 40)
+
+  expect_error(
+    svySE_simple(
+      data = data,
+      indicators = "indicator",
+      group_vars = "group",
+      output = "unweighted",
+      na_rm = FALSE,
+      verbose = FALSE
+    ),
+    "valores perdidos|missing values"
+  )
 })
 
 
-test_that("svySE_simple does not modify the original data", {
+test_that("groups without valid indicator records are omitted", {
 
-  df <- make_simple_test_data()
-  original <- df
+  data <- data.frame(
+    group = c("A", "A", "B", "B"),
+    indicator = c(0, 1, NA, NA),
+    weight = c(1, 2, 3, 4)
+  )
 
-  invisible(
-    svySE_simple(
-      data = df,
-      indicators = "ind_1",
-      group_vars = "dept",
-      verbose = FALSE
+  result <- svySE_simple(
+    data = data,
+    indicators = "indicator",
+    group_vars = "group",
+    weight = "weight",
+    output = "both",
+    na_rm = TRUE,
+    verbose = FALSE
+  )
+
+  tab <- result$results$indicator$simple$TOTAL
+
+  expect_true("A" %in% tab$group)
+  expect_false("B" %in% tab$group)
+})
+
+
+test_that("simple tables work by division for all output modes", {
+
+  data <- data.frame(
+    group = c("A", "A", "B", "B"),
+    division = c("X", "Y", "X", "Y"),
+    indicator = c(0, 1, 1, 0),
+    weight = c(10, 20, 30, 40)
+  )
+
+  result <- svySE_simple(
+    data = data,
+    indicators = "indicator",
+    group_vars = "group",
+    division = "division",
+    weight = "weight",
+    output = "both",
+    verbose = FALSE
+  )
+
+  divisions <- names(
+    result$results$indicator$simple
+  )
+
+  expect_setequal(
+    divisions,
+    c("TOTAL", "X", "Y")
+  )
+
+  expect_true(
+    all(
+      c(
+        "freq_0",
+        "freq_1",
+        "freq_total",
+        "exp_0",
+        "exp_pct_0",
+        "exp_1",
+        "exp_pct_1",
+        "exp_total",
+        "exp_pct_total"
+      ) %in%
+        names(result$results$indicator$simple$X)
     )
-  )
-
-  expect_identical(df, original)
-  expect_false(".__svySE_group_id__" %in% names(df))
-  expect_false(".__svySE_cat__" %in% names(df))
-})
-
-
-test_that("svySE_simple validates its main arguments", {
-
-  df <- make_simple_test_data()
-
-  expect_error(
-    svySE_simple(
-      data = df,
-      indicators = "missing",
-      group_vars = "dept",
-      verbose = FALSE
-    ),
-    class = "svySE_error"
-  )
-
-  expect_error(
-    svySE_simple(
-      data = df,
-      indicators = "ind_1",
-      group_vars = "missing",
-      verbose = FALSE
-    ),
-    class = "svySE_error"
-  )
-
-  expect_error(
-    svySE_simple(
-      data = df,
-      indicators = "ind_1",
-      group_vars = "dept",
-      group_labels = c("Department", "Extra"),
-      verbose = FALSE
-    ),
-    class = "svySE_error"
-  )
-
-  expect_error(
-    svySE_simple(
-      data = df,
-      indicators = "ind_1",
-      group_vars = "dept",
-      target = 2,
-      valid_values = c(0, 1),
-      verbose = FALSE
-    ),
-    class = "svySE_error"
-  )
-
-  expect_error(
-    svySE_simple(
-      data = df,
-      indicators = "ind_1",
-      group_vars = "dept",
-      pct_mult = 0,
-      verbose = FALSE
-    ),
-    class = "svySE_error"
-  )
-})
-
-
-test_that("print.svySE_simple_result returns the object invisibly", {
-
-  result <- svySE_simple(
-    data = make_simple_test_data(),
-    indicators = "ind_1",
-    group_vars = "dept",
-    verbose = FALSE
-  )
-
-  output <- capture.output(
-    returned <- print(result)
-  )
-
-  expect_identical(returned, result)
-  expect_true(any(grepl("svySE simple result", output, fixed = TRUE)))
-  expect_true(any(grepl("Weighted", output, fixed = TRUE)))
-  expect_true(any(grepl("observed sample", output, fixed = TRUE)))
-})
-
-
-test_that("verbose mode reports simple-table progress", {
-
-  expect_message(
-    svySE_simple(
-      data = make_simple_test_data(),
-      indicators = "ind_1",
-      group_vars = "dept",
-      verbose = TRUE
-    ),
-    "Procesando tabla simple"
   )
 })

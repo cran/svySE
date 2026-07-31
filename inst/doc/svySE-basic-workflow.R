@@ -157,10 +157,39 @@ res_simple <- svySE_simple(
   target = 1,
   valid_values = c(0, 1),
   pct_mult = 100,
+  na_rm = TRUE,
   verbose = FALSE
 )
 
 res_simple
+
+## ----simple-missing-values----------------------------------------------------
+df_missing <- data.frame(
+  dept = c("A", "A", "B", "B", "C", "C"),
+  ind_1 = c(1, 0, NA, NA, 1, 1)
+)
+
+res_missing <- svySE_simple(
+  data = df_missing,
+  indicators = "ind_1",
+  group_vars = "dept",
+  group_labels = "Department",
+  na_rm = TRUE,
+  verbose = FALSE
+)
+
+res_missing$results$ind_1$simple$TOTAL
+
+## ----simple-missing-error, error=TRUE-----------------------------------------
+try({
+svySE_simple(
+  data = df_missing,
+  indicators = "ind_1",
+  group_vars = "dept",
+  na_rm = FALSE,
+  verbose = FALSE
+)
+})
 
 ## ----simple-class-------------------------------------------------------------
 class(res_simple)
@@ -203,7 +232,7 @@ export_simple <- svySE_xlsx(
   x = res_simple,
   file_err = NULL,
   file_tab = file_tab,
-  cols_tab = svySE_cols_tab("full"),
+  cols_tab = NULL,
   overwrite = TRUE
 )
 
@@ -226,7 +255,7 @@ export_multiple <- svySE_xlsx(
   file_err = multiple_err,
   file_tab = multiple_tab,
   cols_err = svySE_cols_err("full"),
-  cols_tab = svySE_cols_tab("full"),
+  cols_tab = NULL,
   overwrite = TRUE
 )
 
@@ -318,4 +347,48 @@ svySE_xlsx(
 )
 
 file.exists(custom_tab)
+
+## ----eval=FALSE---------------------------------------------------------------
+# svySE_xlsx(
+#   x = res_both,
+#   file_tab = "simple_all.xlsx",
+#   cols_tab = NULL
+# )
+
+## -----------------------------------------------------------------------------
+svySE_cols_tab("unweighted")
+svySE_cols_tab("freq")
+svySE_cols_tab("pct")
+svySE_cols_tab("expanded")
+svySE_cols_tab("expanded_freq")
+svySE_cols_tab("expanded_pct")
+svySE_cols_tab("counts")
+svySE_cols_tab("percentages")
+
+## ----eval=FALSE---------------------------------------------------------------
+# svySE_xlsx(
+#   x = res_both,
+#   file_tab = "simple_counts.xlsx",
+#   cols_tab = svySE_cols_tab("counts")
+# )
+
+## ----eval=FALSE---------------------------------------------------------------
+# custom_columns <- svySE_cols_tab(
+#   type = "custom",
+#   cols = c(
+#     "freq_1",
+#     "pct_1",
+#     "exp_1",
+#     "exp_pct_1",
+#     "freq_total",
+#     "exp_total",
+#     "exp_pct_total"
+#   )
+# )
+# 
+# svySE_xlsx(
+#   x = res_both,
+#   file_tab = "simple_custom.xlsx",
+#   cols_tab = custom_columns
+# )
 

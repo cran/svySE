@@ -1,22 +1,35 @@
-<p align="center">
-  <img src="man/figures/logo.png" width="260" alt="svySE logo">
-</p>
+<!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# svySE
+# svySE <img src="man/figures/logo.png" align="right" height="145" alt="svySE logo" />
+
+<!-- badges: start -->
 
 [![R-CMD-check](https://github.com/lburgoss/svySE/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/lburgoss/svySE/actions/workflows/R-CMD-check.yaml)
-[![CRAN status](https://www.r-pkg.org/badges/version/svySE)](https://CRAN.R-project.org/package=svySE)
+[![CRAN status](https://www.r-pkg.org/badges/version/svySE)](https://cran.r-project.org/package=svySE)
 [![CRAN downloads](https://cranlogs.r-pkg.org/badges/grand-total/svySE)](https://cran.r-project.org/package=svySE)
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Sampling Error Estimation for Complex Surveys**
+<!-- badges: end -->
+
+## Sampling Error Estimation for Complex Surveys
+
+## Version Status
+
+| Release channel | Version | Status |
+|-----------------|---------|--------|
+| [CRAN](https://CRAN.R-project.org/package=svySE) | `0.2.0` | Stable |
+| [GitHub](https://github.com/lburgoss/svySE) | `0.2.1` | Development |
+
+> The CRAN release is recommended for regular use. The GitHub development
+> version may include new features and improvements that are still under
+> active testing.
 
 `svySE` is an R package for estimating sampling errors, producing descriptive indicator tables, and exporting structured results from complex survey data.
 
 The package provides two complementary workflows:
 
 - `svySE_calc()` calculates weighted estimates and sampling errors using the survey design.
-- `svySE_simple()` calculates unweighted frequencies and percentages from the observed sample.
+- `svySE_simple()` calculates unweighted frequencies and percentages, expanded frequencies, or both, without sampling errors.
 
 Results can be exported individually or consolidated across multiple datasets, survey weights, indicators, or analysis runs using `svySE_xlsx()`.
 
@@ -70,6 +83,9 @@ Although the package was developed from practical experience in survey sampling 
 - Unstratified designs
 - Unclustered designs
 - Unweighted simple indicator tables
+- Weighted expanded-frequency tables without sampling errors
+- Combined expanded and unexpanded counts
+- Configurable missing-value handling in simple indicator tables
 - Flexible column selection
 - Consolidated export of multiple analyses
 - Selective export of chosen results
@@ -83,7 +99,7 @@ Although the package was developed from practical experience in survey sampling 
 |------|----------|---------|
 | **1** | `svySE_cfg()` | Configure estimation settings, confidence level, target category, CV, DEFF, and other options. |
 | **2A** | `svySE_calc()` | Calculate weighted estimates and sampling errors using the survey design. |
-| **2B** | `svySE_simple()` | Calculate unweighted frequencies and percentages from the observed sample. |
+| **2B** | `svySE_simple()` | Calculate unweighted tables, expanded frequencies, or both, without sampling errors. |
 | **3** | `svySE_xlsx()` | Export one or multiple results to `.xlsx` files. |
 
 The two calculation functions have separate responsibilities:
@@ -91,7 +107,11 @@ The two calculation functions have separate responsibilities:
 | Function | Uses weights | Uses survey design | Main output |
 |----------|:------------:|:------------------:|-------------|
 | `svySE_calc()` | Yes | Yes | Weighted estimates and sampling errors |
-| `svySE_simple()` | No | No | Unweighted frequencies and percentages |
+| `svySE_simple()` | Optional | No | Unweighted tables, expanded frequencies, or both |
+
+Simple indicator tables also provide explicit control over missing indicator
+values through the `na_rm` argument. Missing values can be excluded from the
+calculation or treated as a validation condition that stops the analysis.
 
 This separation avoids redundant calculations and allows users to run only the workflow required for each analysis.
 
@@ -355,7 +375,20 @@ When `div_weight` is supplied, that weight is used for the corresponding divisio
 
 ## Simple Indicator Tables
 
-`svySE_simple()` calculates frequencies and percentages without using sampling weights, strata, or cluster variables.
+`svySE_simple()` creates descriptive indicator tables without calculating
+standard errors, confidence intervals, CV, or DEFF.
+
+It supports three output modes:
+
+| `output` | Columns produced |
+|----------|------------------|
+| `"unweighted"` | `freq_0`, `pct_0`, `freq_1`, `pct_1`, `freq_total`, `pct_total` |
+| `"weighted"` | `exp_0`, `exp_pct_0`, `exp_1`, `exp_pct_1`, `exp_total`, `exp_pct_total` |
+| `"both"` | All unweighted and expanded columns |
+
+### Unweighted frequencies and percentages
+
+This is the default and preserves the original behavior:
 
 ```r
 res_simple <- svySE_simple(
@@ -363,34 +396,86 @@ res_simple <- svySE_simple(
   indicators = c("ind_1", "ind_2"),
   group_vars = "dept",
   group_labels = "Department",
-  division = NULL,
+  output = "unweighted",
   target = 1,
   valid_values = c(0, 1),
   pct_mult = 100,
+  na_rm = TRUE,
   verbose = FALSE
 )
 
-res_simple
-```
-
-A specific table can be inspected with:
-
-```r
 res_simple$results$ind_1$simple$TOTAL
 ```
 
-The output includes:
+### Expanded frequencies
+
+Expanded frequencies are obtained by summing the specified weight within
+categories 0, 1, and the valid total:
+
+```r
+res_expanded <- svySE_simple(
+  data = df,
+  indicators = "ind_1",
+  group_vars = "dept",
+  group_labels = "Department",
+  weight = "weight",
+  output = "weighted",
+  verbose = FALSE
+)
+
+res_expanded$results$ind_1$simple$TOTAL
+```
+
+The result contains:
 
 | Column | Description |
 |--------|-------------|
-| `freq_0` | Frequency of non-target cases |
-| `pct_0` | Percentage of non-target cases |
-| `freq_1` | Frequency of target cases |
-| `pct_1` | Percentage of target cases |
-| `freq_total` | Total number of valid observations |
-| `pct_total` | Total percentage |
+| `exp_0` | Expanded frequency for category 0 |
+| `exp_pct_0` | Weighted percentage for category 0 |
+| `exp_1` | Expanded frequency for category 1 |
+| `exp_pct_1` | Weighted percentage for category 1 |
+| `exp_total` | Expanded total of valid indicator records |
+| `exp_pct_total` | Total weighted percentage |
 
-> The results produced by `svySE_simple()` describe only the observed sample. Because no sampling weights or survey design variables are used, these percentages should not be interpreted as population estimates.
+### Expanded and unexpanded counts together
+
+```r
+res_both <- svySE_simple(
+  data = df,
+  indicators = "ind_1",
+  group_vars = "dept",
+  group_labels = "Department",
+  weight = "weight",
+  output = "both",
+  verbose = FALSE
+)
+
+res_both$results$ind_1$simple$TOTAL
+```
+
+By default, `na_rm = TRUE`. Missing indicator values are excluded from the
+calculation, and groups without valid observations for a specific indicator are
+omitted from that indicator table.
+
+Use `na_rm = FALSE` to stop the calculation when missing indicator values are
+present:
+
+```r
+svySE_simple(
+  data = df,
+  indicators = "ind_1",
+  group_vars = "dept",
+  na_rm = FALSE
+)
+```
+
+Records with missing weights do not contribute to expanded frequencies. When
+`output = "both"`, valid indicator records still contribute to the unweighted
+columns.
+
+> Unweighted frequencies describe the observed sample. Expanded frequencies
+> are weighted totals. Neither mode in `svySE_simple()` calculates sampling
+> errors.
 
 ---
 
@@ -403,19 +488,13 @@ res_simple_domain <- svySE_simple(
   group_vars = "dept",
   group_labels = "Department",
   division = "service",
-  target = 1,
-  valid_values = c(0, 1),
+  weight = "weight",
+  output = "both",
   verbose = FALSE
 )
-```
 
-Available divisions can be reviewed with:
-
-```r
 names(res_simple_domain$results$ind_1$simple)
 ```
-
----
 
 ## Export Results to XLSX
 
@@ -559,8 +638,30 @@ svySE_xlsx(
 
 ### Simple table columns
 
+Available profiles include:
+
 ```r
 svySE_cols_tab("full")
+svySE_cols_tab("unweighted")
+svySE_cols_tab("target")
+svySE_cols_tab("freq")
+svySE_cols_tab("pct")
+svySE_cols_tab("expanded")
+svySE_cols_tab("expanded_freq")
+svySE_cols_tab("expanded_pct")
+svySE_cols_tab("counts")
+svySE_cols_tab("percentages")
+```
+
+Export only sample and expanded counts:
+
+```r
+svySE_xlsx(
+  x = res_both,
+  file_err = NULL,
+  file_tab = tempfile(fileext = ".xlsx"),
+  cols_tab = svySE_cols_tab("counts")
+)
 ```
 
 A custom selection can be defined with:
@@ -571,21 +672,27 @@ simple_columns <- svySE_cols_tab(
   cols = c(
     "freq_1",
     "pct_1",
-    "freq_total"
+    "exp_1",
+    "exp_pct_1",
+    "freq_total",
+    "exp_total",
+    "exp_pct_total"
   )
 )
-```
 
-Use the selected columns during export:
-
-```r
 svySE_xlsx(
-  x = res_simple,
+  x = res_both,
   file_err = NULL,
   file_tab = tempfile(fileext = ".xlsx"),
   cols_tab = simple_columns
 )
 ```
+
+When `cols_tab = NULL`, all columns available in each simple result are
+exported automatically.
+
+
+---
 
 ---
 
@@ -595,7 +702,7 @@ svySE_xlsx(
 |----------|-------------|
 | `svySE_cfg()` | Configure sampling error estimation settings |
 | `svySE_calc()` | Calculate weighted estimates and sampling errors |
-| `svySE_simple()` | Calculate unweighted frequencies and percentages |
+| `svySE_simple()` | Calculate unweighted tables, expanded frequencies, or both |
 | `svySE_xlsx()` | Export one or multiple results to `.xlsx` files |
 | `svySE_cols_err()` | Select sampling error columns |
 | `svySE_cols_tab()` | Select simple table columns |
@@ -607,7 +714,7 @@ svySE_xlsx(
 | Output | Generated by | Weighted | Uses survey design | Typical use |
 |--------|--------------|:--------:|:------------------:|-------------|
 | Sampling error tables | `svySE_calc()` | Yes | Yes | Official statistics, complex surveys, technical reports |
-| Simple indicator tables | `svySE_simple()` | No | No | Descriptive analysis and sample-level reporting |
+| Simple indicator tables | `svySE_simple()` | Optional | No | Sample counts, expanded totals, and descriptive reporting |
 
 ---
 
@@ -620,7 +727,7 @@ svySE_xlsx(
 | `survey` | Design-based estimation, standard errors, confidence intervals, CV, and DEFF |
 | `openxlsx` | Creation and formatting of `.xlsx` workbooks |
 | `stats` | Statistical formulas, coefficients, and confidence intervals |
-| `svySE` | High-level workflow for survey indicators, errors, tables, and export |
+| `svySE` | Workflow for survey indicators, errors, tables, and export |
 
 `svySE` does not replace `survey`. It provides a structured interface for repeated indicator production and export workflows built on top of its design-based estimation capabilities.
 
@@ -661,7 +768,7 @@ Open documentation for the principal functions:
 
 ## Development Status
 
-Version **0.2.0** introduces:
+The current development version introduces:
 
 - optional cluster variables;
 - support for unstratified and unclustered designs;
@@ -670,6 +777,10 @@ Version **0.2.0** introduces:
 - consolidated export of multiple analyses;
 - selective export through the `select` argument;
 - customizable `.xlsx` workbooks.
+- weighted expanded frequencies in `svySE_simple()`;
+- combined expanded and unexpanded simple tables;
+- additional simple-table column profiles and custom export;
+- faster unclustered survey designs by avoiding unnecessary PSU nesting;
 
 Future releases will focus on additional estimators, expanded quality indicators, more export options, and broader support for complex survey workflows.
 
