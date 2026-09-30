@@ -35,7 +35,9 @@ cfg <- svySE_cfg(
   pct_mult = 100,
   deff = TRUE,
   cv = TRUE,
-  na_rm = TRUE
+  na_rm = TRUE,
+  ci_method = "wald",
+  ci_df = NULL
 )
 
 cfg
@@ -66,6 +68,84 @@ names(res_error$results$ind_1$error)
 
 ## ----inspect-error-table------------------------------------------------------
 res_error$results$ind_1$error$TOTAL
+
+## ----xlogit-calc--------------------------------------------------------------
+cfg_xlogit <- svySE_cfg(
+  estimator = "prop",
+  ci_method = "xlogit"
+)
+
+res_xlogit <- svySE_calc(
+  data = df,
+  indicators = c("ind_1", "ind_2"),
+  group_vars = "dept",
+  group_labels = "Department",
+  strata = "strata",
+  cluster = "cluster",
+  weight = "weight",
+  cfg = cfg_xlogit,
+  verbose = FALSE
+)
+
+res_xlogit$results$ind_1$error$TOTAL
+
+## ----xlogit-compare-----------------------------------------------------------
+wald <- res_error$results$ind_1$error$TOTAL
+xlogit <- res_xlogit$results$ind_1$error$TOTAL
+
+data.frame(
+  dept = wald$dept,
+  est_pct = wald$est_pct,
+  se_pct = wald$se_pct,
+  wald_lower = wald$ci_l_pct,
+  wald_upper = wald$ci_u_pct,
+  xlogit_lower = xlogit$ci_l_pct,
+  xlogit_upper = xlogit$ci_u_pct
+)
+
+## ----xlogit-degf--------------------------------------------------------------
+design <- survey::svydesign(
+  ids = ~cluster,
+  strata = ~strata,
+  weights = ~weight,
+  data = df,
+  nest = TRUE
+)
+
+survey::degf(design)
+
+## ----xlogit-df----------------------------------------------------------------
+cfg_xlogit_df <- svySE_cfg(
+  estimator = "prop",
+  ci_method = "xlogit",
+  ci_df = 30
+)
+
+cfg_xlogit_z <- svySE_cfg(
+  estimator = "prop",
+  ci_method = "xlogit",
+  ci_df = Inf
+)
+
+cfg_xlogit_df
+
+## ----xlogit-complement--------------------------------------------------------
+res_0 <- svySE_calc(
+  data = df,
+  indicators = "ind_1",
+  group_vars = "dept",
+  strata = "strata",
+  cluster = "cluster",
+  weight = "weight",
+  cfg = svySE_cfg(estimator = "prop", target = 0, ci_method = "xlogit"),
+  verbose = FALSE
+)
+
+tab_1 <- res_xlogit$results$ind_1$error$TOTAL
+tab_0 <- res_0$results$ind_1$error$TOTAL
+
+all.equal(tab_0$ci_l_pct, 100 - tab_1$ci_u_pct)
+all.equal(tab_0$ci_u_pct, 100 - tab_1$ci_l_pct)
 
 ## ----design-weight-only-------------------------------------------------------
 res_weight <- svySE_calc(
